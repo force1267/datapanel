@@ -16,9 +16,24 @@ app.use(cookieSession({
 	keys: sessionKeys
 }))
 
+const log = require("./log.json");
+var logLock = false;
+function log(msg) {
+    log.push([Date.now(), msg])
+    if(log.length > 100) {
+        log = log.filter((e, i) => i > 35)
+    }
+    if(logLock) return
+    logLock = true
+    fs.writeFile("./log.json", JSON.stringify(log), e => logLock = false)
+}
+
 const db = require("./db.json");
 if(!db.users) {
     db.users = []
+}
+if(!db.databases) {
+    db.databases = {}
 }
 //
 save();
@@ -65,11 +80,11 @@ app.use((req, res, next) => {
 })
 
 const confirmCode = process.env.confirmCode;
-app.get("/confirm" , private(1), (req, res) => {
+app.get("/confirm", private(1, "USER_CONFIRM"), (req, res) => {
     var { code } = req.query;
-    if(code === confirmCode) {
-        const lvl = db.users[id].level;
-        db.users[id].level = lvl < 3 ? 3 : lvl
+    if(req.user && code === confirmCode) {
+        const lvl = req.user.level;
+        req.user.level = lvl < 3 ? 3 : lvl
         save();
         return res.json("ok");
     } else {
@@ -77,6 +92,39 @@ app.get("/confirm" , private(1), (req, res) => {
     }
 })
 
+
+app.get("/databases", private(3), (req, res) => {
+    return res.json(Object.getOwnPropertyNames(db.databases))
+})
+app.get("/databases/add", private(3, "DB_ADD"), (req, res) => {
+    const { name, description } = req.query;
+    if(name !== undefined && !db.databases[name]) {
+        db.databases[name] = { name, description, fields: {}, data: [] };
+        save();
+        return res.json("ok")
+    }
+    return res.status(409).json("already exists")
+})
+
+app.get("/database/:name", private(3), (req, res) => {
+    const { name } = req.params;
+    const b = db.databases[name];
+    return res.json(b);
+})
+app.get("/database/:name/update", private(3, "DB_UPDATE"), (req, res) => {
+    var body = req.body;
+    const { name } = req.params;
+    const b = db.databases[name];
+    for(var p in body) {
+        const field = body[p];
+        if(!["text", "number", "tick"].includes(field)) {
+            return res.status(400).json((""))
+        }
+    }
+    b.fields = body;
+    save();
+    return res.json("ok")
+})
 
 app.use(express.static(path.join(__dirname, '/ui/public')));
 
@@ -86,8 +134,11 @@ app.listen(80)
 console.log("app running on http://localhost:80")
 
 
-function private(level = 3) {
+function private(level = 3, action = false) {
     return (req, res, next) => {
+        if(action) {
+            log({ user: req.user, action })
+        }
         if(req.user && req.user.level >= level) {
             return next();
         } else {

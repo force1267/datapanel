@@ -1,1 +1,1 @@
-{"users":[]}
+{"users":[{"username":"force","password":"1267","level":3,"id":0}],"databases":{"bio":{"name":"bio","description":"test","fields":{},"data":[]},"bio2":{"name":"bio2","description":"test","fields":{},"data":[]}}}
